@@ -12,6 +12,8 @@ from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
+from langchain_community.vectorstores import Chroma
+from langchain_ollama import OllamaEmbeddings
 
 app = FastAPI()
 logging.basicConfig(level=logging.INFO)
@@ -19,7 +21,7 @@ logger = logging.getLogger("promptops")
 
 
 # ─────────────────────────────────────────────────────────────
-# Pydantic request/response models (unchanged from your current API)
+# Pydantic request/response models
 # ─────────────────────────────────────────────────────────────
 
 class AskRequest(BaseModel):
@@ -34,7 +36,8 @@ class AskResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────
-# 1. Define tool(s) — swap/add real tools here later
+# 1. Define tools — must all be defined BEFORE `tools = [...]`
+#    and before llm.bind_tools(tools) is called below.
 # ─────────────────────────────────────────────────────────────
 
 @tool
@@ -52,7 +55,35 @@ def get_current_weather(location: str) -> str:
     return f"The weather in {location} is sunny, 22°C"
 
 
-tools = [get_current_weather]
+# Connect to the vector store built by ingestor.py.
+# chroma_db lives at promptops/chroma_db — same level as this main.py file.
+embeddings = OllamaEmbeddings(model="nomic-embed-text")
+vectorstore = Chroma(
+    persist_directory="./chroma_db",
+    embedding_function=embeddings,
+)
+
+
+@tool
+def search_documents(query: str) -> str:
+    """Search internal documents for relevant information.
+
+    Use this when the user asks a question that might be answered by
+    the ingested documents/notes, rather than general knowledge or weather.
+
+    Args:
+        query: The search query
+
+    Returns:
+        Relevant document excerpts
+    """
+    results = vectorstore.similarity_search(query, k=3)
+    if not results:
+        return "No relevant documents found."
+    return "\n\n".join(doc.page_content for doc in results)
+
+
+tools = [get_current_weather, search_documents]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -98,11 +129,14 @@ def try_parse_fallback_tool_call(text: str):
 async def call_agent(state: AgentState):
     messages = state["messages"]
 
-    # Loop guard: if a tool already ran, build the final answer directly
-    # instead of re-invoking the model (avoids infinite tool-call loops
-    # some local models fall into).
-    if isinstance(messages[-1], ToolMessage):
-        return {"messages": [AIMessage(content=f"Here's what I found: {messages[-1].content}")]}
+    # Safety net: as soon as ANY tool has returned a result, stop calling
+    # the LLM again and build the final answer directly. Earlier testing
+    # showed qwen2.5-coder can loop indefinitely re-calling tools instead
+    # of answering, so this guard is intentionally strict (threshold=1)
+    # rather than waiting for 2+ results to confirm a real loop.
+    if any(isinstance(m, ToolMessage) for m in messages):
+        last_tool_msg = next(m for m in reversed(messages) if isinstance(m, ToolMessage))
+        return {"messages": [AIMessage(content=f"Based on what I found: {last_tool_msg.content}")]}
 
     formatted = prompt.format_messages(messages=messages)
     response = await llm_with_tools.ainvoke(formatted)
