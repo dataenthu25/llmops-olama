@@ -26,20 +26,51 @@ Most LLMOps tutorials stop at "call an API and print the response." This project
 - [x] Confirmed: vector search reliably returns relevant, correct chunks from ingested documents
 - [ ] **Known limitation:** the local 7B model's ability to *synthesize* a natural-language answer from retrieved chunks is inconsistent — see below
 
+## Project structure
+
+Refactored from a single flat `main.py` into a layered structure — the
+Python/FastAPI equivalent of a typical Spring Boot package layout:
+
+```
+promptops/
+├── main.py                  # entrypoint — creates app, includes routers (≈ Application.java)
+├── config.py                 # centralized settings (≈ application.yml)
+├── requirements.txt           # pinned dependencies (≈ pom.xml)
+├── schemas/
+│   └── ask.py                  # AskRequest / AskResponse (≈ DTOs)
+├── routers/
+│   └── ask.py                  # /health, /ask HTTP routes (≈ @RestController)
+├── services/
+│   └── agent_service.py         # LangGraph state, graph, agent loop (≈ @Service)
+├── tools/
+│   ├── weather.py                # get_current_weather (≈ @Component)
+│   └── documents.py              # search_documents + vector store connection
+├── rag/
+│   ├── ingestor.py                # one-time/on-demand document ingestion script
+│   └── chroma_db/                 # persistent local vector store (generated)
+├── docs/                      # source documents for RAG ingestion
+└── dev-reset.sh               # automated local dev cycle (see below)
+```
+
+Each layer has one job: `routers/` only handles HTTP concerns, `services/`
+holds the actual agent logic, `tools/` are self-contained and independently
+testable, and `config.py` centralizes settings that used to be hardcoded
+across multiple files.
+
 ## Architecture
 
 ```
 Client
   │
   ▼
-FastAPI (/ask)
+FastAPI (/ask)  — routers/ask.py
   │
   ▼
-LangGraph agent
+LangGraph agent  — services/agent_service.py
   │
   ├── decides: answer directly, use get_current_weather, or use search_documents?
   │
-  ├── [tool needed] → ToolNode executes → result fed back to agent
+  ├── [tool needed] → ToolNode executes (tools/) → result fed back to agent
   │
   └── [no tool needed] → final answer
   │
@@ -47,7 +78,7 @@ LangGraph agent
 Ollama (qwen2.5-coder:7b — chat, nomic-embed-text — embeddings, both local)
   │
   ▼
-Chroma (local persistent vector store)
+Chroma (local persistent vector store, rag/chroma_db)
 ```
 
 ## Setup
@@ -64,7 +95,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # 3. Install dependencies
-pip install fastapi uvicorn langchain langgraph langchain-ollama langchain-community chromadb langchain-text-splitters requests
+pip install -r requirements.txt
 
 # 4. Ingest documents (run once, or whenever docs/ changes)
 cd rag
