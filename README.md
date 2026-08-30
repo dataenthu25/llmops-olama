@@ -29,21 +29,21 @@ Most LLMOps tutorials stop at "call an API and print the response." This project
 ## Project structure
 
 Refactored from a single flat `main.py` into a layered structure — the
-Python/FastAPI equivalent of a typical Spring Boot package layout:
+Python/FastAPI  package layout:
 
 ```
 promptops/
-├── main.py                  # entrypoint — creates app, includes routers (≈ Application.java)
-├── config.py                 # centralized settings (≈ application.yml)
-├── requirements.txt           # pinned dependencies (≈ pom.xml)
+├── main.py                  # entrypoint — creates app, includes routers
+├── config.py                 # centralized settings 
+├── requirements.txt           # pinned dependencies
 ├── schemas/
-│   └── ask.py                  # AskRequest / AskResponse (≈ DTOs)
+│   └── ask.py                  # AskRequest / AskResponse 
 ├── routers/
-│   └── ask.py                  # /health, /ask HTTP routes (≈ @RestController)
+│   └── ask.py                  # /health, /ask HTTP routes 
 ├── services/
-│   └── agent_service.py         # LangGraph state, graph, agent loop (≈ @Service)
+│   └── agent_service.py         # LangGraph state, graph, agent loop 
 ├── tools/
-│   ├── weather.py                # get_current_weather (≈ @Component)
+│   ├── weather.py                # get_current_weather 
 │   └── documents.py              # search_documents + vector store connection
 ├── rag/
 │   ├── ingestor.py                # one-time/on-demand document ingestion script
