@@ -2,7 +2,6 @@
 
 A small LLMOps learning project: a FastAPI service that wraps a local LLM (via Ollama) behind a `/ask` endpoint, with an agentic LangGraph layer that can decide whether to call tools before answering.
 
-Built as a hands-on project while transitioning from DevOps (Spring Boot/Java) into LLMOps — applying CI/CD, monitoring, and ops discipline to LLM-based systems instead of traditional services.
 
 ## Why this project
 
@@ -35,19 +34,19 @@ Python/FastAPI  package layout:
 promptops/
 ├── main.py                  # entrypoint — creates app, includes routers
 ├── config.py                 # centralized settings 
-├── requirements.txt           # pinned dependencies
+├── requirements.txt          # pinned dependencies
 ├── schemas/
-│   └── ask.py                  # AskRequest / AskResponse 
+│   └── ask.py                # AskRequest / AskResponse 
 ├── routers/
-│   └── ask.py                  # /health, /ask HTTP routes 
+│   └── ask.py                 # /health, /ask HTTP routes 
 ├── services/
-│   └── agent_service.py         # LangGraph state, graph, agent loop 
+│   └── agent_service.py       # LangGraph state, graph, agent loop 
 ├── tools/
-│   ├── weather.py                # get_current_weather 
-│   └── documents.py              # search_documents + vector store connection
+│   ├── weather.py              # get_current_weather 
+│   └── documents.py            # search_documents + vector store connection
 ├── rag/
-│   ├── ingestor.py                # one-time/on-demand document ingestion script
-│   └── chroma_db/                 # persistent local vector store (generated)
+│   ├── ingestor.py             # one-time/on-demand document ingestion script
+│   └── chroma_db/              # persistent local vector store (generated)
 ├── docs/                      # source documents for RAG ingestion
 └── dev-reset.sh               # automated local dev cycle (see below)
 ```
