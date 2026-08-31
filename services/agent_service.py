@@ -18,6 +18,12 @@ from langgraph.prebuilt import ToolNode
 from config import CHAT_MODEL, CHAT_TEMPERATURE, LOGGER_NAME
 from tools.weather import get_current_weather
 from tools.documents import search_documents
+from services.prompt_service import load_prompt
+from config import ACTIVE_SYSTEM_PROMPT
+from langfuse.langchain import CallbackHandler
+from config import LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
+
+langfuse_handler = CallbackHandler()
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -44,8 +50,9 @@ class AgentState(TypedDict):
 llm = ChatOllama(model=CHAT_MODEL, temperature=CHAT_TEMPERATURE)
 llm_with_tools = llm.bind_tools(tools)
 
+system_prompt_text = load_prompt(ACTIVE_SYSTEM_PROMPT)
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful assistant. Use tools when needed."),
+    ("system", system_prompt_text),
     MessagesPlaceholder(variable_name="messages"),
 ])
 
