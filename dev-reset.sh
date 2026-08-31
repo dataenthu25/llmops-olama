@@ -52,6 +52,13 @@ curl -s -X POST http://localhost:$PORT/ask \
     -d "{\"question\": \"$QUESTION\"}" | python3 -m json.tool
 
 echo ""
+echo "==> Step 6: Running eval suite"
+set +e  # don't let a failing eval kill the script before printing the summary below
+python3 evals/run_evals.py
+EVAL_EXIT_CODE=$?
+set -e
+
+echo ""
 echo "==> Done. Server is running in the background (PID $SERVER_PID)."
 echo "    Tail logs with: tail -f server.log"
 echo "    Stop it with:   kill $SERVER_PID"
