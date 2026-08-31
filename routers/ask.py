@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage
 
 from config import LOGGER_NAME,ACTIVE_SYSTEM_PROMPT
 from schemas.ask import AskRequest, AskResponse
-from services.agent_service import agent
+from services.agent_service import agent , langfuse_handler
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -30,8 +30,10 @@ async def ask(request: AskRequest):
 
     try:
         result = await agent.ainvoke({
-            "messages": [HumanMessage(content=request.question)]
-        })
+            "messages": [HumanMessage(content=request.question)]},
+                config={"callbacks": [langfuse_handler]}
+
+    )
         answer_text = result["messages"][-1].content
 
         latency_ms = (time.perf_counter() - start) * 1000
