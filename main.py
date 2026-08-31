@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from config import LOGGER_NAME
 from routers.ask import router as ask_router
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(LOGGER_NAME)
 
 app = FastAPI(title="PromptOps")
