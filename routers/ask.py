@@ -10,7 +10,7 @@ import time
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import HumanMessage
 
-from config import LOGGER_NAME
+from config import LOGGER_NAME,ACTIVE_SYSTEM_PROMPT
 from schemas.ask import AskRequest, AskResponse
 from services.agent_service import agent
 
@@ -38,7 +38,8 @@ async def ask(request: AskRequest):
 
         logger.debug(
             f"question_len={len(request.question)} "
-            f"latency_ms={latency_ms:.2f}"
+            f"latency_ms={latency_ms:.2f} "
+            f"prompt_version={ACTIVE_SYSTEM_PROMPT}"
         )
 
         return AskResponse(
