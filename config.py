@@ -17,4 +17,4 @@ CHROMA_PERSIST_DIR = "./rag/chroma_db"
 # Logging
 LOGGER_NAME = "promptops"
 
-ACTIVE_SYSTEM_PROMPT = "system_v2"
+ACTIVE_SYSTEM_PROMPT = "system_v1"

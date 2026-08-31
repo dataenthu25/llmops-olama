@@ -1,0 +1,14 @@
+cat > .gitignore << 'EOF'
+# Python
+__pycache__/
+*.pyc
+venv/
+*.egg-info/
+
+# Environment
+.env
+
+# Generated / local state
+rag/chroma_db/
+server.log
+EOF
