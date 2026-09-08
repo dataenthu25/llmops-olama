@@ -14,6 +14,8 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
+from services.classifier_service import classify
+
 
 from config import CHAT_MODEL, CHAT_TEMPERATURE, LOGGER_NAME
 from tools.weather import get_current_weather
@@ -79,14 +81,23 @@ def try_parse_fallback_tool_call(text: str):
 async def call_agent(state: AgentState):
     messages = state["messages"]
 
-    # Safety net: as soon as ANY tool has returned a result, stop calling
-    # the LLM again and build the final answer directly. Local models
-    # (e.g. qwen2.5-coder) can loop indefinitely re-calling tools instead
-    # of answering, so this guard is intentionally strict.
+    # Loop guard: unchanged, still needed for after a tool actually runs
     if any(isinstance(m, ToolMessage) for m in messages):
         last_tool_msg = next(m for m in reversed(messages) if isinstance(m, ToolMessage))
         return {"messages": [AIMessage(content=f"Based on what I found: {last_tool_msg.content}")]}
 
+    # NEW: pre-router — only runs on the first turn (no tool messages yet)
+    original_question = messages[0].content
+    predicted_label = classify(original_question)
+
+    if predicted_label == "no_tool_needed":
+        # Skip tool-binding entirely, answer directly with the plain model
+        formatted = prompt.format_messages(messages=messages)
+        response = await llm.ainvoke(formatted)  # note: llm, not llm_with_tools
+        logger.debug(f"classifier routed to no_tool_needed, question={original_question!r}")
+        return {"messages": [response]}
+
+    # Otherwise, fall through to the existing tool-enabled flow
     formatted = prompt.format_messages(messages=messages)
     response = await llm_with_tools.ainvoke(formatted)
 
@@ -97,7 +108,6 @@ async def call_agent(state: AgentState):
             response.content = ""
 
     logger.debug(f"tool_calls={getattr(response, 'tool_calls', None)} content={response.content!r}")
-
     return {"messages": [response]}
 
 
@@ -120,3 +130,5 @@ _workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", END
 _workflow.add_edge("tools", "agent")
 
 agent = _workflow.compile()
+
+
