@@ -1,8 +1,6 @@
 # PromptOps
 
-A small LLMOps learning project: a FastAPI service that wraps a local LLM (via Ollama) behind a `/ask` endpoint, with an agentic LangGraph layer that can decide whether to call tools before answering.
-
-Built as a hands-on project while transitioning from DevOps (Spring Boot/Java) into LLMOps — applying CI/CD, monitoring, and ops discipline to LLM-based systems instead of traditional services.
+A small LLMOps learning project: a FastAPI service that wraps a local LLM (via Ollama) behind a `/ask` endpoint, with an agentic LangGraph layer that can decide whether to call tools before answering. 
 
 ## Why this project
 
@@ -52,13 +50,22 @@ Rather than leave the over-eager tool-use bug as a permanent documented limitati
 - [x] Real environment friction encountered and resolved along the way, consistent with this project's pattern: a `peft`-internal `torchao` version mismatch on Colab, an `SFTTrainer` API rename (`tokenizer=` → `processing_class=` in current `trl`), and a silent CPU-fallback (`torch.cuda.is_available()` returning `False`) after an earlier `--force-reinstall` — each diagnosed and fixed rather than worked around
 - [ ] **Known limitation:** the classifier is a narrow, single-purpose model (110 training examples, 3 output classes) — it is not a general-purpose replacement for the main agent's reasoning, only a fast gate for one specific known failure mode. It also adds a second model's worth of memory/startup overhead to the service. A production version of this pattern would need a larger, more rigorously held-out evaluation set before being trusted beyond this project's scope.
 
+### Phase 4.6 — Jev (TypeSafe AI) as an optional classifier backend, with proven fallback
+Added a second backend for the same tool-selection decision, using [Jev](https://typesafe.ai), a purpose-built "System One" decision model that returns typed, calibrated answers instead of generated text — a close conceptual match for exactly this kind of narrow routing decision.
+
+- [x] `services/classifier_service.py` now tries Jev first (if `TYPESAFE_API_KEY` is configured), falling back to the local LoRA fine-tune (Phase 4.5) on any failure — mirroring the same defensive-fallback pattern already used elsewhere in this project (e.g. `try_parse_fallback_tool_call`)
+- [x] Confirmed working end-to-end with a real API key: all three eval cases correctly classified, with Jev also returning calibrated confidence scores per option (e.g. 100% confident on clear-cut questions, ~56-71% on the genuinely ambiguous RAG-routing case) — a richer signal than the local classifier's single best-guess label
+- [x] **Explicitly tested the failure path, not just the happy path:** temporarily set an invalid API key, confirmed every Jev call failed and logged clearly, confirmed the local classifier transparently took over for every request, and confirmed the eval suite still passed 3/3 on the local fallback alone
+- [ ] **Known limitation / future improvement:** Jev's confidence score isn't currently used for anything — a natural next step would be a rule like "only trust Jev's answer above some confidence threshold, otherwise fall back to the local model or ask again," rather than trusting any successful response equally regardless of confidence
+- [ ] **Scope note:** this is a brand-new (days-old at the time of integration) third-party service; the fallback design means it's safe to experiment with without becoming a hard dependency, but it hasn't been evaluated for long-term reliability, pricing at scale, or production suitability beyond this project
+
 ### Phase 5 — CI/CD (core pipeline working, one job unverified live)
 - [x] GitHub Actions workflow (`.github/workflows/ci.yml`) with two jobs:
   - `lint-and-import-check` — runs on every push, confirms the app imports cleanly (catches broken code before it's even run locally)
   - `eval-suite` — installs Ollama, pulls both models, ingests documents, starts the server, and runs the full eval suite — gated to pull requests into `main` only
 - [x] Confirmed `lint-and-import-check` runs and passes on every push
 - [x] Deliberate two-tier design: fast checks on every push, expensive checks (Ollama install + ~5GB model pull) only on PRs — a practical trade-off for a project with local-model dependencies, avoiding slow/wasteful CI on every commit
-- [x] Fixed a real YAML indentation bug during setup (`eval-suite` was accidentally nested inside `lint-and-import-check`'s block) — a good example of a class of bug Java/Spring engineers aren't used to, since YAML's structure is whitespace-significant with no braces to visually anchor nesting
+- [x] Fixed a real YAML indentation bug during setup (`eval-suite` was accidentally nested inside `lint-and-import-check`'s block) — a reminder that YAML's structure is whitespace-significant with no braces to visually anchor nesting, unlike most general-purpose languages
 - [ ] **Known limitation:** the `eval-suite` job's `pull_request`-triggered run was never directly observed completing in the Actions UI — the PR for this branch was merged via GitHub's UI, and the corresponding run visible afterward showed as a `push` event (where `eval-suite` correctly shows "Skipped" per its own gating condition), not a `pull_request` event. The job's YAML is correct and the eval suite itself is proven to work (both locally and conceptually equivalent to what CI would run), but a live, fully-completed `eval-suite` CI run showing pass/fail output was not directly confirmed. Documented honestly rather than chased further, given the cost (minutes of runtime, ~5GB download) of repeatedly forcing PR-triggered runs just to verify UI display.
 
 ### Phase 6 — Observability (complete)
@@ -89,7 +96,7 @@ promptops/
 │   └── ask.py                  # /health, /ask HTTP routes
 ├── services/
 │   ├── agent_service.py         # LangGraph state, graph, agent loop
-│   └── classifier_service.py     # fine-tuned LoRA tool-selection pre-router (Phase 4.5)
+│   └── classifier_service.py     # tool-selection pre-router: Jev (optional) + local LoRA fallback (Phase 4.5/4.6)
 ├── models/
 │   └── lora-tool-selector-final/  # fine-tuned LoRA adapter weights
 ├── finetune_data/
@@ -127,8 +134,10 @@ FastAPI (/ask)  — routers/ask.py
   ▼
 LangGraph agent  — services/agent_service.py
   │
-  ├── fine-tuned classifier pre-router (services/classifier_service.py)
-  │     decides: no_tool_needed vs. tool-needed, before the main model runs
+  ├── classifier pre-router (services/classifier_service.py)
+  │     tries Jev (TypeSafe AI) first if configured, falls back to the
+  │     local LoRA fine-tune on any failure — decides no_tool_needed
+  │     vs. tool-needed before the main model runs
   │
   ├── decides: answer directly, use get_current_weather, or use search_documents?
   │
@@ -199,6 +208,26 @@ showing the entire agent decision path (tool selection, per-step latency,
 model input/output at each turn) — see Known Limitations below for what's
 not yet captured (cost/token data).
 
+## Optional: Jev classifier backend (Phase 4.6)
+
+By default, tool-selection routing uses the local LoRA fine-tune (Phase 4.5)
+only. To also try [Jev](https://typesafe.ai) as the primary backend (with
+automatic fallback to the local model on any failure):
+
+```bash
+pip install jev
+```
+
+Get an API key from `console.typesafe.ai` and add it to `.env`:
+```
+TYPESAFE_API_KEY=your_key_here
+```
+
+No code changes needed — `classifier_service.py` detects the key at
+startup and switches backends automatically. Leaving `TYPESAFE_API_KEY`
+unset (or removing it) reverts to local-only behavior with no other
+changes required.
+
 ## Usage
 
 ```bash
@@ -239,6 +268,7 @@ Phase 5) — a fast version runs on every push, and the full version
   - *Fallback JSON parsing* — `qwen2.5-coder` sometimes emits a tool call as raw JSON text instead of populating LangChain's structured `tool_calls` field. A parser detects and converts this.
   - *Safety-net loop guard* — once any tool has returned a result, the agent stops calling the LLM again and builds the answer directly, rather than risking an infinite re-call loop.
   - *Fine-tuned classifier pre-router (Phase 4.5)* — a small LoRA-tuned model decides `no_tool_needed` vs. tool-needed before the main model runs, fixing a specific over-eager tool-use bug that prompting alone couldn't resolve.
+  - *Jev backend with local fallback (Phase 4.6)* — an optional, purpose-built decision model can serve the same tool-selection routing with calibrated confidence scores; if it's unavailable or misconfigured, every request transparently falls back to the local classifier instead of failing — verified by deliberately breaking the API key and confirming the eval suite still passed.
 
 These aren't hacks — they're the kind of guardrail a production LLM system needs regardless of which model backs it, since model behavior (local or hosted) is never 100% reliable. Where the eval suite has caught a real regression, that's the eval suite doing its job — and where fine-tuning fixed what prompting couldn't, that's a genuine, evaluated engineering result, not a workaround.
 
@@ -259,3 +289,4 @@ These aren't hacks — they're the kind of guardrail a production LLM system nee
 - **Pydantic** — request/response validation
 - **Langfuse** (self-hosted) — LLM observability and tracing
 - **peft / trl** — LoRA fine-tuning of the tool-selection classifier (Phase 4.5)
+- **Jev** (TypeSafe AI, optional) — purpose-built decision model as an alternate classifier backend (Phase 4.6)
